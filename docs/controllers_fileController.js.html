@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: controllers/fileController.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: controllers/fileController.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+const express = require('express');
+const router = express.Router();
+const path = require('path');
+const rateLimit = require('express-rate-limit');
+
+const fileUpload = require('../awsConfig/fileUpload');
+const singleUpload = fileUpload.s3Upload.single('input');
+
+let File = require('../models/file');
+const constants = require('../helpers/constants');
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // limits to 10 requests per windowMs
+    message: {reply: false, data:'Too many requests!!'}
+});
+/**
+* @class
+*/
+class FileController {
+  /**
+   * @param {String} mimeType
+   * @returns {Number}
+   */
+  static getFileType(mimeType) {
+    switch (mimeType) {
+      case 'image/png':
+      case 'image/jpeg':
+      case 'image/gif':
+          return constants.FILE_TYPE.IMAGE;
+          break;
+
+      case 'video/mpeg':
+          return constants.FILE_TYPE.VIDEO;
+          break;
+
+      case 'audio/mpeg':
+          return constants.FILE_TYPE.AUDIO;
+          break;
+
+      case 'application/pdf':
+          return constants.FILE_TYPE.PDF;
+          break;
+
+      default:
+          return constants.FILE_TYPE.OTHER;
+          break;
+    }
+  }
+  /**
+   * @param {Object} request
+   * @param {Object} response
+   */
+  addFile(request, response) {
+    singleUpload(request, response, function(err) {
+      if(!err) {
+        const newFile = new File({
+          fileName: request.file.key,
+          fileExtension: path.extname(request.file.originalname),
+          fileType: FileController.getFileType(request.file.mimetype),
+          fileSize: request.file.size,
+          timestamp: new Date().getTime(),
+          fileURL: request.file.location,
+          fileStatus: constants.FILE_STATUS.PRESENT
+        });
+        newFile.save()
+          .then((savedData) => {
+            response.status(201).json({
+              success: true,
+              reply: savedData
+            });
+          })
+          .catch((error) => {
+            response.status(404).json({
+              success: false,
+              reply: error
+            });
+          })
+      } else {
+        response.status(404).json({
+          success: false,
+          reply: error
+        });
+      }
+    });
+  }
+  /**
+   * @param {Object} request
+   * @param {Object} response
+   */
+  getFile(request, response) {
+    File.findOne({_id: request.params.id, fileStatus: constants.FILE_STATUS.PRESENT})
+      .then((fileInfo) => {
+        if(fileInfo) {
+          response.status(200).json({
+            success: true,
+            reply: fileInfo
+          });
+        } else {
+          response.status(404).json({
+            success: false,
+            reply: 'Requested file does not exist'
+          });
+        }
+      })
+      .catch((error) => {
+        response.status(404).json({
+          success: false,
+          reply: error
+        });
+      });
+  }
+  /**
+   * @param {Object} request
+   * @param {Object} response
+   */
+  deleteFile(request, response) {
+    File.findOneAndUpdate({_id: request.params.id}, {fileStatus: constants.FILE_STATUS.ABSENT}, {new: true})
+      .then((fileInfo) => {
+        return fileUpload.deleteS3File(fileInfo.fileName);
+      })
+      .then(() => {
+        response.status(200).json({
+          success: true,
+          reply: 'File deleted successfully'
+        });
+      })
+      .catch((error) => {
+        response.status(404).json({
+          success: false,
+          reply: error
+        });
+      });
+  }
+}
+
+let fileControllerObj = new FileController();
+
+router.post('/', limiter, fileControllerObj.addFile);
+router.get('/:id', fileControllerObj.getFile);
+router.delete('/:id', fileControllerObj.deleteFile);
+
+module.exports = fileControllerObj;
+module.exports = router;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-s3Upload.html">s3Upload</a></li></ul><h3>Classes</h3><ul><li><a href="FileController.html">FileController</a></li><li><a href="FileSchema.html">FileSchema</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a> on Fri Aug 30 2019 16:09:08 GMT+0530 (India Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
